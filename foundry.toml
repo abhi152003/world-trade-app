@@ -2,5 +2,15 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/"
+]
+
+[rpc_endpoints]
+world_chain_sepolia = "https://worldchain-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+# Alternative public RPC: https://worldchain-sepolia.gateway.tenderly.co
+
+[etherscan]
+world_chain_sepolia = { key = "${WORLDSCAN_API_KEY}", url = "https://sepolia.worldscan.io/api", chain = 4801 }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

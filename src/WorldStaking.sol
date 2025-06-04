@@ -131,12 +131,11 @@ contract WorldStaking is Ownable {
         // If trade is still active, it needs to be exited by backend first
         require(!userStake.tradeActive, "Trade must be exited first. Contact backend to exit trade.");
 
+        // Preserve the original timestamp and claimable rewards for claiming on Sunday
+        // Only reset amount and set active to false
         userStake.amount = 0;
-        userStake.timestamp = 0;
-        userStake.tradingAmount = 0;
-        userStake.currentTradeValue = 0;
-        userStake.claimableRewards = 0;
         userStake.active = false;
+        // Keep timestamp, claimableRewards, tradingAmount, and currentTradeValue for history
 
         require(stakingToken.transfer(msg.sender, amount), "Transfer failed");
 
@@ -149,9 +148,9 @@ contract WorldStaking is Ownable {
         bool hasClaimableRewards = false;
         uint256 earliestTimestamp = type(uint256).max;
 
-        // Calculate total claimable rewards and find earliest stake
+        // Calculate total claimable rewards and find earliest stake (including inactive stakes with rewards)
         for (uint256 i = 0; i < stakes[msg.sender].length; i++) {
-            if (stakes[msg.sender][i].active && stakes[msg.sender][i].claimableRewards > 0) {
+            if (stakes[msg.sender][i].claimableRewards > 0) {
                 hasClaimableRewards = true;
                 totalRewards += stakes[msg.sender][i].claimableRewards;
                 if (stakes[msg.sender][i].timestamp < earliestTimestamp) {
@@ -174,9 +173,9 @@ contract WorldStaking is Ownable {
         uint256 firstClaimableSunday = lockinEnd + (daysUntilSunday * SECONDS_IN_DAY);
         require(block.timestamp >= firstClaimableSunday, "Cannot claim before the first Sunday after lock-in");
 
-        // Reset claimable rewards for all stakes
+        // Reset claimable rewards for all stakes that have rewards
         for (uint256 i = 0; i < stakes[msg.sender].length; i++) {
-            if (stakes[msg.sender][i].active && stakes[msg.sender][i].claimableRewards > 0) {
+            if (stakes[msg.sender][i].claimableRewards > 0) {
                 stakes[msg.sender][i].claimableRewards = 0;
             }
         }
@@ -205,7 +204,7 @@ contract WorldStaking is Ownable {
         uint256 earliestTimestamp = type(uint256).max;
 
         for (uint256 i = 0; i < stakes[user].length; i++) {
-            if (stakes[user][i].active && stakes[user][i].claimableRewards > 0) {
+            if (stakes[user][i].claimableRewards > 0) {
                 hasClaimableRewards = true;
                 if (stakes[user][i].timestamp < earliestTimestamp) {
                     earliestTimestamp = stakes[user][i].timestamp;
@@ -253,9 +252,7 @@ contract WorldStaking is Ownable {
     function getTotalClaimableRewards(address user) external view returns (uint256) {
         uint256 totalRewards = 0;
         for (uint256 i = 0; i < stakes[user].length; i++) {
-            if (stakes[user][i].active) {
-                totalRewards += stakes[user][i].claimableRewards;
-            }
+            totalRewards += stakes[user][i].claimableRewards;
         }
         return totalRewards;
     }
