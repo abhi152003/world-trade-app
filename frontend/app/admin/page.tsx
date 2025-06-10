@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useWriteContract } from 'wagmi';
 import { createPublicClient, http } from 'viem';
-import { worldChainSepolia } from '../constants/chains';
+import { worldChainMainnet } from '../constants/chains';
 import { CONTRACT_ADDRESSES, WORLD_STAKING_ABI } from '../constants/contracts';
 import { formatBigInt } from '../utils/format';
 import { simulatePriceMovement } from '../utils/tradeSimulator';
@@ -37,7 +37,7 @@ export default function AdminPage() {
         
         // Create a public client for direct contract calls
         const publicClient = createPublicClient({
-          chain: worldChainSepolia,
+          chain: worldChainMainnet,
           transport: http()
         });
         
@@ -148,7 +148,7 @@ export default function AdminPage() {
     }
   };
   
-  // Handle exiting a trade
+  // Handle exiting a trade with hardcoded values
   const handleExitTrade = async (trade: ActiveTrade, profitable: boolean) => {
     try {
       setExitingTrade(`${trade.user}-${trade.stakeIndex}`);
@@ -183,6 +183,38 @@ export default function AdminPage() {
     } catch (err) {
       console.error('Error exiting trade:', err);
       setError('Failed to exit trade');
+    } finally {
+      setExitingTrade(null);
+    }
+  };
+
+  // Handle exiting a trade at current value (set by cron job)
+  const handleExitTradeAtCurrentValue = async (trade: ActiveTrade) => {
+    try {
+      setExitingTrade(`${trade.user}-${trade.stakeIndex}`);
+      
+      // Exit at the current trade value that was set by the cron job
+      const finalValue = trade.currentTradeValue;
+      
+      console.log(`Exiting trade at current value: ${finalValue} (set by cron job)`);
+      
+      await writeContractAsync({
+        address: CONTRACT_ADDRESSES.WORLD_STAKING as `0x${string}`,
+        abi: WORLD_STAKING_ABI,
+        functionName: 'exitTrade',
+        args: [trade.user, BigInt(trade.stakeIndex), finalValue],
+      });
+      
+      // Remove from active trades
+      setActiveTrades(prevTrades => 
+        prevTrades.filter(t => 
+          !(t.user === trade.user && t.stakeIndex === trade.stakeIndex)
+        )
+      );
+      
+    } catch (err) {
+      console.error('Error exiting trade at current value:', err);
+      setError('Failed to exit trade at current value');
     } finally {
       setExitingTrade(null);
     }
@@ -275,6 +307,18 @@ export default function AdminPage() {
                             {isUpdating ? 'Updating...' : 'Update Value'}
                           </button>
                           <button
+                            onClick={() => handleExitTradeAtCurrentValue(trade)}
+                            disabled={isUpdating || isExiting}
+                            className={`px-2 py-1 text-xs rounded ${
+                              isExiting
+                                ? 'bg-purple-800 cursor-not-allowed'
+                                : 'bg-purple-600 hover:bg-purple-700'
+                            }`}
+                            title="Exit at the current value set by cron job"
+                          >
+                            Exit (Current)
+                          </button>
+                          <button
                             onClick={() => handleExitTrade(trade, true)}
                             disabled={isUpdating || isExiting}
                             className={`px-2 py-1 text-xs rounded ${
@@ -313,6 +357,16 @@ export default function AdminPage() {
           >
             Refresh Trades
           </button>
+        </div>
+        
+        <div className="mt-4 p-4 bg-gray-700/30 border border-gray-600 rounded">
+          <h3 className="text-sm font-medium mb-2">Button Descriptions</h3>
+          <div className="text-xs text-gray-400 space-y-1">
+            <p><span className="text-blue-400">Update Value:</span> Randomly simulates price movement</p>
+            <p><span className="text-purple-400">Exit (Current):</span> Exits trade at the current value set by the cron job signal processing</p>
+            <p><span className="text-green-400">Exit (Profit):</span> Exits with hardcoded profit (10-20%)</p>
+            <p><span className="text-red-400">Exit (Loss):</span> Exits with hardcoded loss (0-10%)</p>
+          </div>
         </div>
       </div>
     </div>

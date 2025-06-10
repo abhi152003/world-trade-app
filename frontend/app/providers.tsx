@@ -6,18 +6,23 @@ import { WagmiProvider, http } from 'wagmi';
 import { Chain } from 'wagmi/chains';
 
 // Define World Chain Sepolia
-const worldChainSepolia: Chain = {
-  id: 4801,
-  name: 'World Chain Sepolia',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+const worldChainMainnet = {
+  id: 480,
+  name: 'World Chain',
+  network: 'worldchain',
+  nativeCurrency: {
+    decimals: 18,
+    name: 'Ether',
+    symbol: 'ETH',
+  },
   rpcUrls: {
-    default: { http: ['https://worldchain-sepolia.gateway.tenderly.co'] },
-    public: { http: ['https://worldchain-sepolia.gateway.tenderly.co'] },
+    public: { http: ['https://worldchain-mainnet.g.alchemy.com/public'] },
+    default: { http: ['https://worldchain-mainnet.g.alchemy.com/public'] },
   },
   blockExplorers: {
-    default: { name: 'WorldScan', url: 'https://sepolia.worldscan.io' },
+    default: { name: 'World Chain Explorer', url: 'https://worldscan.org/' },
   },
-  testnet: true,
+  testnet: false,
 };
 
 // TODO: Replace with your actual project ID from https://cloud.walletconnect.com
@@ -27,9 +32,9 @@ const WALLET_CONNECT_PROJECT_ID = '888c61a22b73854fccde22e6ba5ea27f'
 const config = getDefaultConfig({
   appName: 'World Trade App',
   projectId: WALLET_CONNECT_PROJECT_ID,
-  chains: [worldChainSepolia],
+  chains: [worldChainMainnet],
   transports: {
-    [worldChainSepolia.id]: http(),
+    [worldChainMainnet.id]: http(),
   },
 });
 

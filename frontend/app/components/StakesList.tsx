@@ -5,7 +5,7 @@ import { useAccount, useReadContract, useWriteContract } from 'wagmi';
 import { CONTRACT_ADDRESSES, WORLD_STAKING_ABI } from '../constants/contracts';
 import { formatBigInt, formatTimestamp, formatTimeRemaining } from '../utils/format';
 import { createPublicClient, http } from 'viem';
-import { worldChainSepolia } from '../constants/chains';
+import { worldChainMainnet } from '../constants/chains';
 
 type StakeDetails = {
   amount: bigint;
@@ -56,7 +56,7 @@ export function StakesList() {
         
         // Create a public client for direct contract calls
         const publicClient = createPublicClient({
-          chain: worldChainSepolia,
+          chain: worldChainMainnet,
           transport: http()
         });
 
@@ -218,7 +218,7 @@ export function StakesList() {
     
     try {
       const publicClient = createPublicClient({
-        chain: worldChainSepolia,
+        chain: worldChainMainnet,
         transport: http()
       });
       

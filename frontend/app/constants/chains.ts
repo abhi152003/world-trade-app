@@ -1,15 +1,18 @@
-import { Chain } from 'viem';
-
-export const worldChainSepolia: Chain = {
-  id: 4801,
-  name: 'World Chain Sepolia',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+export const worldChainMainnet = {
+  id: 480,
+  name: 'World Chain',
+  network: 'worldchain',
+  nativeCurrency: {
+    decimals: 18,
+    name: 'Ether',
+    symbol: 'ETH',
+  },
   rpcUrls: {
-    default: { http: ['https://worldchain-sepolia.gateway.tenderly.co'] },
-    public: { http: ['https://worldchain-sepolia.gateway.tenderly.co'] },
+    public: { http: ['https://worldchain-mainnet.g.alchemy.com/public'] },
+    default: { http: ['https://worldchain-mainnet.g.alchemy.com/public'] },
   },
   blockExplorers: {
-    default: { name: 'WorldScan', url: 'https://sepolia.worldscan.io' },
+    default: { name: 'World Chain Explorer', url: 'https://worldscan.org/' },
   },
-  testnet: true,
-}; 
+  testnet: false,
+};

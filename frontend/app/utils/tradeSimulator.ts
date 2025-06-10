@@ -1,6 +1,6 @@
 import { createPublicClient, createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { worldChainSepolia } from '../constants/chains';
+import { worldChainMainnet } from '../constants/chains';
 import { CONTRACT_ADDRESSES, WORLD_STAKING_ABI } from '../constants/contracts';
 
 // Simulation parameters
@@ -45,13 +45,13 @@ export async function runTradeSimulation(privateKey: string) {
     
     // Create clients
     const publicClient = createPublicClient({
-      chain: worldChainSepolia,
+      chain: worldChainMainnet,
       transport: http()
     });
     
     const walletClient = createWalletClient({
       account,
-      chain: worldChainSepolia,
+      chain: worldChainMainnet,
       transport: http()
     });
 
@@ -76,7 +76,7 @@ export async function runTradeSimulation(privateKey: string) {
               { type: 'uint256', name: 'timestamp' }
             ]
           },
-          fromBlock: 'earliest'
+          fromBlock: 'earliest' 
         });
         
         // Process each user's stakes

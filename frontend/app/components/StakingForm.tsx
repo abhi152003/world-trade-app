@@ -1,109 +1,265 @@
 'use client';
 
 import { useState } from 'react';
-import { useAccount, useReadContract, useWriteContract } from 'wagmi';
+import { useAccount, useChainId, useReadContract, useWriteContract } from 'wagmi';
 import { CONTRACT_ADDRESSES, ERC20_ABI, WORLD_STAKING_ABI } from '../constants/contracts';
 import { formatBigInt } from '../utils/format';
-import { parseEther } from 'viem';
+import { parseEther, parseGwei, maxUint256 } from 'viem';
+import { getWalletClient, readContract } from '@wagmi/core';
+import { useConfig } from 'wagmi';
 
 export function StakingForm() {
   const [amount, setAmount] = useState('');
-  const [isApproving, setIsApproving] = useState(false);
   const [isStaking, setIsStaking] = useState(false);
+  const [isSettingAllowance, setIsSettingAllowance] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const { address } = useAccount();
+  const chainId = useChainId();
   const { writeContractAsync } = useWriteContract();
+  const config = useConfig();
 
-  // Get user's token balance
   const { data: balance } = useReadContract({
     address: CONTRACT_ADDRESSES.STAKING_TOKEN as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
     args: [address as `0x${string}`],
-    query: {
-      enabled: !!address,
-    },
+    query: { enabled: !!address },
   });
 
-  // Get current allowance for staking contract
-  const { data: allowance } = useReadContract({
+  // Get token allowance for Permit2
+  const { data: permit2Allowance, refetch: refetchAllowance } = useReadContract({
     address: CONTRACT_ADDRESSES.STAKING_TOKEN as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: [address as `0x${string}`, CONTRACT_ADDRESSES.WORLD_STAKING as `0x${string}`],
-    query: {
-      enabled: !!address,
-    },
+    args: [address as `0x${string}`, CONTRACT_ADDRESSES.PERMIT2 as `0x${string}`],
+    query: { enabled: !!address },
   });
 
-  const handleApprove = async () => {
-    if (!amount || !address) return;
+  const handleMaxAmount = () => {
+    if (balance) setAmount(formatBigInt(balance as bigint));
+  };
+
+  const handleSetMaxAllowance = async () => {
+    if (!address) return;
     
     try {
       setError(null);
-      setIsApproving(true);
+      setIsSettingAllowance(true);
       
-      const amountToApprove = parseEther(amount);
+      console.log('Setting maximum allowance for Permit2...');
       
-      await writeContractAsync({
+      const txHash = await writeContractAsync({
         address: CONTRACT_ADDRESSES.STAKING_TOKEN as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACT_ADDRESSES.WORLD_STAKING, amountToApprove],
+        args: [CONTRACT_ADDRESSES.PERMIT2 as `0x${string}`, maxUint256],
       });
       
+      console.log('Allowance set! Transaction Hash:', txHash);
+      
+      // Refetch allowance to update UI
+      await refetchAllowance();
+      
     } catch (err: any) {
-      console.error('Error approving tokens:', err);
-      setError('Failed to approve tokens. Please try again.');
+      console.error('Error setting allowance:', err);
+      setError(`Failed to set allowance: ${err.message}`);
     } finally {
-      setIsApproving(false);
+      setIsSettingAllowance(false);
     }
   };
 
-  const handleStake = async () => {
+  const handleStakeWithPermit2 = async () => {
     if (!amount || !address) return;
     
     try {
       setError(null);
       setIsStaking(true);
-      
-      const amountToStake = parseEther(amount);
-      
-      await writeContractAsync({
+
+      // Validate amount
+      const parsedAmount = parseEther(amount);
+      if (parsedAmount <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
+
+      // Check if user has enough balance
+      if (balance && parsedAmount > (balance as bigint)) {
+        throw new Error(`Insufficient balance. You have ${formatBigInt(balance as bigint)} WST, but trying to stake ${amount} WST`);
+      }
+
+      // Additional safety check - ensure we have sufficient balance with some buffer
+      if (!balance || balance === 0n) {
+        throw new Error('No token balance detected. Please check your wallet has WST tokens.');
+      }
+
+      console.log('Starting Permit2 staking process...');
+      console.log('Amount to stake:', amount, 'Wei:', parsedAmount.toString());
+
+      const wordPos = 0;
+      const bitmap = await readContract(config, {
         address: CONTRACT_ADDRESSES.WORLD_STAKING as `0x${string}`,
         abi: WORLD_STAKING_ABI,
-        functionName: 'stake',
-        args: [amountToStake],
+        functionName: 'getNonceBitmap',
+        args: [address, BigInt(wordPos)],
       });
+      console.log('Bitmap:', bitmap);
+
+      let bitmapBigInt = BigInt(bitmap as string);
+      let bit = 0;
+      while (bit < 256) {
+        if ((bitmapBigInt & (1n << BigInt(bit))) === 0n) break;
+        bit++;
+      }
+      if (bit === 256) throw new Error('No available nonce found');
+      const nonce = BigInt(wordPos * 256 + bit);
+      console.log('Nonce:', nonce.toString());
+
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1 * 60);
+      console.log('Deadline:', deadline.toString());
+
+      const permitData = {
+        permitted: {
+          token: CONTRACT_ADDRESSES.STAKING_TOKEN,
+          amount: parseEther(amount),
+        },
+        spender: CONTRACT_ADDRESSES.WORLD_STAKING,
+        nonce,
+        deadline,
+      };
+      console.log('PermitData:', permitData);
       
-      // Clear form after successful stake
+      // Log detailed comparison with debug version
+      console.log('=== PERMIT DATA DETAILS ===');
+      console.log('Token:', CONTRACT_ADDRESSES.STAKING_TOKEN);
+      console.log('Amount:', parseEther(amount).toString());
+      console.log('Nonce:', nonce.toString());
+      console.log('Deadline:', deadline.toString());
+      console.log('Domain chainId:', chainId);
+      console.log('Domain verifyingContract:', CONTRACT_ADDRESSES.PERMIT2);
+
+      // const domain = {
+      //   name: "Permit2",
+      //   chainId,
+      //   verifyingContract: CONTRACT_ADDRESSES.PERMIT2,
+      // };
+      // console.log('Domain:', domain);
+
+      const types = {
+        PermitTransferFrom: [
+          { name: "permitted", type: "TokenPermissions" },
+          { name: "spender", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+        TokenPermissions: [
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint256" },
+        ],
+      };
+
+      const walletClient = await getWalletClient(config);
+      
+      // Ensure consistent address casing to avoid signature issues
+      const permit2Address = CONTRACT_ADDRESSES.PERMIT2.toLowerCase() as `0x${string}`;
+      console.log('Using Permit2 address (normalized):', permit2Address);
+      
+      const signature = await walletClient.signTypedData({
+        account: address,
+        domain: {
+          name: "Permit2",
+          chainId,
+          verifyingContract: permit2Address,
+        },
+        types,
+        primaryType: 'PermitTransferFrom',
+        message: permitData,
+      });
+      console.log('Signature:', signature);
+
+      // Log exact signing parameters for comparison with debug
+      console.log('=== SIGNATURE VERIFICATION DEBUG ===');
+      console.log('Signer address:', address);
+      console.log('Domain:', {
+        name: "Permit2",
+        chainId,
+        verifyingContract: CONTRACT_ADDRESSES.PERMIT2,
+      });
+      console.log('Types:', types);
+      console.log('Message (exact):', JSON.stringify(permitData, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      ));
+      
+      // Check if this matches the debug signature parameters exactly
+      const debugPermitData = {
+        permitted: {
+          token: CONTRACT_ADDRESSES.STAKING_TOKEN,
+          amount: parseEther("1"), // Debug used "1", staking uses user input
+        },
+        nonce: 0n,
+        deadline: BigInt(Math.floor(Date.now() / 1000) + 1 * 60),
+      };
+      console.log('Would debug data match?', JSON.stringify(debugPermitData, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      ));
+
+      // Remove manual gas settings to let wagmi estimate automatically
+      console.log('=== CONTRACT CALL DETAILS ===');
+      console.log('Contract Address:', CONTRACT_ADDRESSES.WORLD_STAKING);
+      console.log('Function: stakeWithPermit2');
+      console.log('Args:');
+      console.log('  - amount:', parseEther(amount).toString());
+      console.log('  - permitData:', permitData);
+      console.log('  - signature:', signature);
+      console.log('  - signature length:', signature.length);
+
+      const txHash = await writeContractAsync({
+        address: CONTRACT_ADDRESSES.WORLD_STAKING as `0x${string}`,
+        abi: WORLD_STAKING_ABI,
+        functionName: 'stakeWithPermit2',
+        args: [parseEther(amount), permitData, signature],
+      });
+      console.log('Transaction Hash:', txHash);
+      console.log('✓ Transaction submitted successfully! Check explorer for details.');
+
       setAmount('');
-      
     } catch (err: any) {
-      console.error('Error staking tokens:', err);
-      setError('Failed to stake tokens. Please try again.');
+      console.error('=== ERROR DETAILS ===');
+      console.error('Full error object:', err);
+      console.error('Error message:', err.message);
+      console.error('Error data:', err.data);
+      console.error('Error code:', err.code);
+      
+      // More detailed error handling
+      let errorMessage = 'Unknown error';
+      
+      if (err.message) {
+        if (err.message.includes('User rejected')) {
+          errorMessage = 'Transaction was rejected by user';
+        } else if (err.message.includes('insufficient funds')) {
+          errorMessage = 'Insufficient funds for transaction';
+        } else if (err.message.includes('execution reverted')) {
+          // Try to extract revert reason
+          const revertMatch = err.message.match(/execution reverted: (.+)/);
+          const revertReason = revertMatch ? revertMatch[1] : 'unknown reason';
+          errorMessage = `Contract execution failed: ${revertReason}. This might be due to: invalid signature, expired deadline, insufficient token balance, or nonce already used.`;
+        } else if (err.message.includes('nonce')) {
+          errorMessage = 'Nonce error - the permit might have already been used, try refreshing the page';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(`Failed to stake: ${errorMessage}`);
     } finally {
       setIsStaking(false);
     }
   };
 
-  const handleMaxAmount = () => {
-    if (balance) {
-      setAmount(formatBigInt(balance as bigint));
-    }
-  };
-
-  // Format balance for display
   const formattedBalance = balance ? formatBigInt(balance as bigint) : '0';
-  
-  // Check if user needs to approve tokens before staking
-  const needsApproval = allowance && amount ? parseEther(amount) > (allowance as bigint) : false;
 
   return (
     <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 className="text-xl font-bold mb-4">Stake Tokens</h2>
-      
       <div className="mb-4">
         <label className="block text-sm font-medium mb-1">Amount to Stake</label>
         <div className="relative">
@@ -124,47 +280,49 @@ export function StakingForm() {
           </div>
         </div>
         <p className="mt-1 text-sm text-gray-400">Balance: {formattedBalance} WST</p>
+        {permit2Allowance !== undefined && (
+          <p className="mt-1 text-xs text-gray-500">
+            Permit2 Allowance: {formatBigInt(permit2Allowance as bigint)} WST
+            {(permit2Allowance as bigint) === 0n && (
+              <span className="text-amber-400 ml-2">
+                ⚠️ Consider setting max allowance to avoid repeated approvals
+              </span>
+            )}
+          </p>
+        )}
       </div>
-      
       {error && (
         <div className="mb-4 p-2 bg-red-900/50 border border-red-700 rounded text-sm">
           {error}
         </div>
       )}
-      
-      <div className="flex flex-col gap-2">
-        {needsApproval ? (
+              <div className="flex flex-col gap-2">
+          {permit2Allowance !== undefined && (permit2Allowance as bigint) === 0n && (
+            <button
+              onClick={handleSetMaxAllowance}
+              disabled={isSettingAllowance || !address}
+              className={`w-full p-2 rounded font-medium ${
+                isSettingAllowance ? 'bg-gray-800 cursor-not-allowed' : 'bg-gray-600 hover:bg-gray-700'
+              }`}
+            >
+              {isSettingAllowance ? 'Setting Allowance...' : 'Set Max Allowance (One Time)'}
+            </button>
+          )}
           <button
-            onClick={handleApprove}
-            disabled={!amount || isApproving || !address}
-            className={`w-full p-2 rounded font-medium ${
-              isApproving
-                ? 'bg-blue-800 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-          >
-            {isApproving ? 'Approving...' : 'Approve Tokens'}
-          </button>
-        ) : (
-          <button
-            onClick={handleStake}
+            onClick={handleStakeWithPermit2}
             disabled={!amount || isStaking || !address}
             className={`w-full p-2 rounded font-medium ${
-              isStaking
-                ? 'bg-blue-800 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700'
+              isStaking ? 'bg-blue-800 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
-            {isStaking ? 'Staking...' : 'Stake Tokens'}
+            {isStaking ? 'Staking...' : 'Stake with Permit2'}
           </button>
-        )}
-      </div>
-      
+        </div>
       <div className="mt-4 text-sm text-gray-400">
         <p>• Staking locks your tokens for 10 minutes (for testing)</p>
         <p>• 2% of staked amount will be used for trading</p>
-        <p>• Rewards can be claimed anytime after lock period</p>
+        <p>• Rewards can be claimed on Sundays after lock period</p>
       </div>
     </div>
   );
-} 
+}

@@ -4,6 +4,8 @@ import { ConnectButton } from './components/ConnectButton';
 import { StakingForm } from './components/StakingForm';
 import { StakesList } from './components/StakesList';
 import { StakingDebug } from './components/StakingDebug';
+import { Permit2Debug } from './components/Permit2Debug';
+import { DomainSeparatorDebug } from './components/DomainSeparatorDebug';
 import { useAccount } from 'wagmi';
 import Link from 'next/link';
 
@@ -39,7 +41,9 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1">
               <StakingForm />
+              <DomainSeparatorDebug />
               <StakingDebug />
+              <Permit2Debug />
             </div>
             <div className="lg:col-span-2">
               <StakesList />
